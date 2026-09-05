@@ -1,0 +1,19 @@
+# Secrets — jangan pernah masuk ke repo
+.env
+local.properties
+*.keystore
+*.jks
+
+# Android / Gradle build output
+*.iml
+.gradle/
+.kotlin/
+/build/
+*/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.DS_Store
