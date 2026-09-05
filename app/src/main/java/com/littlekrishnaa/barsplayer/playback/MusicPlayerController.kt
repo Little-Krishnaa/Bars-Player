@@ -2,6 +2,7 @@ package com.littlekrishnaa.barsplayer.playback
 
 import android.content.ComponentName
 import android.content.Context
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -16,6 +17,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -72,10 +74,18 @@ class MusicPlayerController @Inject constructor(
         }, MoreExecutors.directExecutor())
     }
 
+    private fun toPlayableUri(path: String): Uri {
+        return if (path.startsWith("content://") || path.startsWith("file://")) {
+            Uri.parse(path)
+        } else {
+            Uri.fromFile(File(path))
+        }
+    }
+
     fun playTrack(track: TrackEntity) {
         val mediaItem = MediaItem.Builder()
             .setMediaId(track.id)
-            .setUri(track.path)
+            .setUri(toPlayableUri(track.path))
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(track.title)
@@ -96,7 +106,7 @@ class MusicPlayerController @Inject constructor(
         val items = tracks.map { track ->
             MediaItem.Builder()
                 .setMediaId(track.id)
-                .setUri(track.path)
+                .setUri(toPlayableUri(track.path))
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(track.title)

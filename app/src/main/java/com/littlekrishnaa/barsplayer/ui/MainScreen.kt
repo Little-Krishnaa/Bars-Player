@@ -1,5 +1,11 @@
 package com.littlekrishnaa.barsplayer.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,10 +21,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.Player
 import com.littlekrishnaa.barsplayer.data.local.entity.TrackEntity
@@ -73,8 +82,53 @@ fun LibraryScreen(
     viewModel: MainViewModel,
     onTrackSelected: (TrackEntity) -> Unit
 ) {
+    val context = LocalContext.current
     val tracks by viewModel.tracks.collectAsState()
     val currentTrackId by viewModel.currentTrackId.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
+    val savedFolders by viewModel.savedFolders.collectAsState()
+
+    val primaryPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+    val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        arrayOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
+
+    var hasPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, primaryPermission) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val audioGranted = result[primaryPermission] ?: (ContextCompat.checkSelfPermission(context, primaryPermission) == PackageManager.PERMISSION_GRANTED)
+        hasPermission = audioGranted
+        if (audioGranted) {
+            viewModel.scanLibrary()
+        }
+    }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.addFolder(uri)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasPermission) {
+            permissionLauncher.launch(permissionsToRequest)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(
@@ -89,22 +143,168 @@ fun LibraryScreen(
                         Icon(Icons.Default.PlayArrow, contentDescription = "Play All", tint = Color(0xFF38BDF8))
                     }
                 }
+                IconButton(onClick = { folderPickerLauncher.launch(null) }) {
+                    Icon(Icons.Default.CreateNewFolder, contentDescription = "Pilih Folder Musik", tint = Color(0xFF38BDF8))
+                }
                 IconButton(onClick = { viewModel.scanLibrary() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "Scan")
                 }
             }
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("${tracks.size} lossless tracks", color = Color.Gray, fontSize = 13.sp)
+            if (savedFolders.isNotEmpty()) {
+                Text("${savedFolders.size} folder aktif", color = Color(0xFF38BDF8), fontSize = 12.sp)
+            }
+        }
+
+        // Tampilkan daftar folder custom yang aktif jika ada
+        if (savedFolders.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Folder, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                savedFolders.forEach { uriStr ->
+                    val displayName = try {
+                        val segment = Uri.parse(uriStr).lastPathSegment ?: "Folder"
+                        segment.substringAfterLast(':').ifEmpty { "Music" }
+                    } catch (_: Exception) { "Music" }
+
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(displayName, fontSize = 11.sp, color = Color.LightGray)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Hapus Folder",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(12.dp).clickable {
+                                    viewModel.removeFolder(uriStr)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isScanning) {
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF38BDF8),
+                trackColor = Color(0xFF1E293B)
+            )
+            Text("Memindai file musik...", fontSize = 12.sp, color = Color(0xFF38BDF8), modifier = Modifier.padding(top = 4.dp))
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
-        Text("${tracks.size} lossless tracks", color = Color.Gray, fontSize = 13.sp)
-        Spacer(modifier = Modifier.height(12.dp))
+
+        // Banner izin jika belum diizinkan
+        if (!hasPermission) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.FolderSpecial, contentDescription = null, tint = Color(0xFF38BDF8))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Izin Akses Audio Diperlukan", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Android memerlukan izin untuk membaca file musik di perangkat Anda, atau Anda dapat memilih folder musik secara langsung.",
+                        fontSize = 12.sp,
+                        color = Color.LightGray
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { permissionLauncher.launch(permissionsToRequest) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Izinkan Akses", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { folderPickerLauncher.launch(null) },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Pilih Folder", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
 
         if (tracks.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "No lossless audio found.\nPlace FLAC/WAV files on device storage.",
-                    color = Color.Gray,
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                     modifier = Modifier.padding(24.dp)
-                )
+                ) {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(54.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Lagu Tidak Terdeteksi",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Pastikan file audio (FLAC/WAV) ada di memori internal, atau gunakan tombol di bawah untuk memilih folder musik langsung.",
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { folderPickerLauncher.launch(null) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8))
+                        ) {
+                            Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Pilih Folder Musik", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (!hasPermission) {
+                                    permissionLauncher.launch(permissionsToRequest)
+                                } else {
+                                    viewModel.scanLibrary()
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Pindai Ulang")
+                        }
+                    }
+                }
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {

@@ -1,5 +1,6 @@
 package com.littlekrishnaa.barsplayer.ui
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.littlekrishnaa.barsplayer.data.local.entity.TrackEntity
@@ -66,6 +67,12 @@ class MainViewModel @Inject constructor(
     private val _activeLyricIndex = MutableStateFlow(-1)
     val activeLyricIndex: StateFlow<Int> = _activeLyricIndex.asStateFlow()
 
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    private val _savedFolders = MutableStateFlow(libraryRepository.getSavedFolderUris())
+    val savedFolders: StateFlow<Set<String>> = _savedFolders.asStateFlow()
+
     init {
         playerController.connect()
         scanLibrary()
@@ -74,8 +81,25 @@ class MainViewModel @Inject constructor(
 
     fun scanLibrary() {
         viewModelScope.launch {
-            libraryRepository.scanLocalAudioFiles()
+            _isScanning.value = true
+            libraryRepository.scanAll()
+            _isScanning.value = false
         }
+    }
+
+    fun addFolder(uri: Uri) {
+        viewModelScope.launch {
+            _isScanning.value = true
+            libraryRepository.saveFolderUri(uri)
+            libraryRepository.scanDocumentFolder(uri)
+            _savedFolders.value = libraryRepository.getSavedFolderUris()
+            _isScanning.value = false
+        }
+    }
+
+    fun removeFolder(uriString: String) {
+        libraryRepository.removeFolderUri(uriString)
+        _savedFolders.value = libraryRepository.getSavedFolderUris()
     }
 
     fun selectTrack(track: TrackEntity) {
