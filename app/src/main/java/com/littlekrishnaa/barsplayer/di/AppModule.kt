@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.littlekrishnaa.barsplayer.data.local.AppDatabase
 import com.littlekrishnaa.barsplayer.data.local.dao.LyricsDao
+import com.littlekrishnaa.barsplayer.data.local.dao.PlaylistDao
 import com.littlekrishnaa.barsplayer.data.local.dao.TrackDao
 import com.littlekrishnaa.barsplayer.lyrics.LyricsSettingsManager
 import com.squareup.moshi.Moshi
@@ -28,7 +29,9 @@ object AppModule {
             context,
             AppDatabase::class.java,
             "bars_player.db"
-        ).build()
+        )
+            .fallbackToDestructiveMigration()
+            .build()
     }
 
     @Provides
@@ -36,6 +39,9 @@ object AppModule {
 
     @Provides
     fun provideLyricsDao(database: AppDatabase): LyricsDao = database.lyricsDao()
+
+    @Provides
+    fun providePlaylistDao(database: AppDatabase): PlaylistDao = database.playlistDao()
 
     @Provides
     @Singleton

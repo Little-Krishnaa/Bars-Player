@@ -15,5 +15,6 @@ data class TrackEntity(
     val sampleRate: Int,
     val bitDepth: Int,
     val mimeType: String,
-    val dateAdded: Long
+    val dateAdded: Long,
+    val isFavorite: Boolean = false
 )
